@@ -1475,6 +1475,18 @@ int bond_enslave(struct net_device *bond_dev, struct net_device *slave_dev,
 		return -EPERM;
 	}
 
+	/* CAN network devices hold device specific filter lists in
+	 * netdev_priv() where dev->ml_priv sets a reference to.
+	 * As bonding assumes to have some ethernet-like device it doesn't
+	 * take care about these CAN specific filter lists today.
+	 * So we deny the enslaving of CAN interfaces here.
+	 */
+	if (slave_dev->type == ARPHRD_CAN) {
+		NL_SET_ERR_MSG(extack, "CAN devices can not be enslaved");
+		slave_err(bond_dev, slave_dev, "no bonding on CAN devices\n");
+		return -EINVAL;
+	}
+
 	/* set bonding device ether type by slave - bonding netdevices are
 	 * created with ether_setup, so when the slave type is not ARPHRD_ETHER
 	 * there is a need to override some of the type dependent attribs/funcs.
