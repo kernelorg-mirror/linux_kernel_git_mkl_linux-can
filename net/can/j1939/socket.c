@@ -450,6 +450,7 @@ static int j1939_sk_bind(struct socket *sock, struct sockaddr_unsized *uaddr, in
 	struct sock *sk;
 	struct net *net;
 	int ret = 0;
+	bool was_bound;
 
 	ret = j1939_sk_sanity_check(addr, len);
 	if (ret)
@@ -462,7 +463,8 @@ static int j1939_sk_bind(struct socket *sock, struct sockaddr_unsized *uaddr, in
 	net = sock_net(sk);
 
 	/* Already bound to an interface? */
-	if (jsk->state & J1939_SOCK_BOUND) {
+	was_bound = (jsk->state & J1939_SOCK_BOUND);
+	if (was_bound) {
 		/* A re-bind() to a different interface is not
 		 * supported.
 		 */
@@ -470,10 +472,6 @@ static int j1939_sk_bind(struct socket *sock, struct sockaddr_unsized *uaddr, in
 			ret = -EINVAL;
 			goto out_release_sock;
 		}
-
-		/* drop old references */
-		j1939_jsk_del(priv, jsk);
-		j1939_local_ecu_put(priv, jsk->addr.src_name, jsk->addr.sa);
 	} else {
 		struct can_ml_priv *can_ml;
 		struct net_device *ndev;
@@ -519,21 +517,30 @@ static int j1939_sk_bind(struct socket *sock, struct sockaddr_unsized *uaddr, in
 		jsk->priv = priv;
 	}
 
+	/* get new references without dropping old references */
+	ret = j1939_local_ecu_get(priv, addr->can_addr.j1939.name, addr->can_addr.j1939.addr);
+	if (ret) {
+		/* nothing to undo if re-bind() failed */
+		if (!was_bound) {
+			j1939_netdev_stop(priv);
+			jsk->priv = NULL;
+			synchronize_rcu();
+			j1939_priv_put(priv);
+		}
+		goto out_release_sock;
+	}
+
+	/* drop old references after re-bind() succeeded */
+	if (was_bound) {
+		j1939_jsk_del(priv, jsk);
+		j1939_local_ecu_put(priv, jsk->addr.src_name, jsk->addr.sa);
+	}
+
 	/* set default transmit pgn */
 	if (j1939_pgn_is_valid(addr->can_addr.j1939.pgn))
 		jsk->pgn_rx_filter = addr->can_addr.j1939.pgn;
 	jsk->addr.src_name = addr->can_addr.j1939.name;
 	jsk->addr.sa = addr->can_addr.j1939.addr;
-
-	/* get new references */
-	ret = j1939_local_ecu_get(priv, jsk->addr.src_name, jsk->addr.sa);
-	if (ret) {
-		j1939_netdev_stop(priv);
-		jsk->priv = NULL;
-		synchronize_rcu();
-		j1939_priv_put(priv);
-		goto out_release_sock;
-	}
 
 	j1939_jsk_add(priv, jsk);
 
