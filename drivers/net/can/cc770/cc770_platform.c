@@ -156,8 +156,13 @@ static int cc770_platform_probe(struct platform_device *pdev)
 	int err, irq;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!mem)
+		return -ENODEV;
+
 	irq = platform_get_irq(pdev, 0);
-	if (!mem || irq <= 0)
+	if (irq < 0)
+		return irq;
+	if (!irq)
 		return -ENODEV;
 
 	mem_size = resource_size(mem);
