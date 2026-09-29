@@ -302,9 +302,6 @@ static void raw_notify(struct raw_sock *ro, unsigned long msg,
 {
 	struct sock *sk = &ro->sk;
 
-	if (!net_eq(dev_net(dev), sock_net(sk)))
-		return;
-
 	if (ro->dev != dev)
 		return;
 
